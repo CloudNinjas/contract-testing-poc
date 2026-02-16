@@ -1,0 +1,69 @@
+services:
+  # PostgreSQL for Pact Broker
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pact
+      POSTGRES_PASSWORD: pact
+      POSTGRES_DB: pact_broker
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pact -d pact_broker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Pact Broker - Contract Management
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    ports:
+      - "9292:9292"
+    environment:
+      PACT_BROKER_DATABASE_URL: postgres://pact:pact@postgres/pact_broker
+      PACT_BROKER_BASIC_AUTH_USERNAME: pact
+      PACT_BROKER_BASIC_AUTH_PASSWORD: pact
+      PACT_BROKER_ALLOW_PUBLIC_READ: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Provider API (FastAPI)
+  provider:
+    build:
+      context: ./provider
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./provider/src:/app/src
+      - ./provider/tests:/app/tests
+      - ./pacts:/app/pacts
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Consumer - runs contract tests
+  consumer:
+    build:
+      context: ./consumer
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PACT_BROKER_BASE_URL=http://pact-broker:9292
+      - PACT_BROKER_USERNAME=pact
+      - PACT_BROKER_PASSWORD=pact
+      - PROVIDER_URL=http://provider:8000
+    volumes:
+      - ./consumer/src:/app/src
+      - ./consumer/tests:/app/tests
+      - ./consumer/scripts:/app/scripts
+      - ./pacts:/app/pacts
+    depends_on:
+      - pact-broker
+      - provider
+    profiles:
+      - test
+
+volumes:
+  postgres_data:
