@@ -1,6 +1,22 @@
 # Pact Contract Testing POC
 
-Proof of Concept für Consumer-Driven Contract Testing mit Pact.
+Proof of Concept für Consumer-Driven Contract Testing mit [Pact](https://pact.io) und Python.
+
+## Was ist Contract Testing?
+
+```
+Consumer                          Provider
+────────                          ────────
+"Was BRAUCHE ich?"                "Liefere ich das auch?"
+     │                                  │
+     ▼                                  ▼
+Generiert Vertrag    ─────────▶   Verifiziert Vertrag
+(Pact JSON)                       (gegen echte API)
+```
+
+**Consumer** = Besteller ("Ich hätte gern...")
+**Provider** = Koch ("Ich liefere das Gericht")
+**Pact** = Die Speisekarte (der Vertrag zwischen beiden)
 
 ## Architektur
 
@@ -16,103 +32,149 @@ Proof of Concept für Consumer-Driven Contract Testing mit Pact.
 ### 1. Infrastruktur starten
 
 ```bash
-# Broker und Provider starten
-docker compose up -d postgres pact-broker provider
-
-# Warten bis alles läuft
-docker compose ps
+make up
 ```
 
-### 2. Pact Broker öffnen
+Startet:
+- **Pact Broker**: http://localhost:9292 (Login: `pact` / `pact`)
+- **Provider API**: http://localhost:8000
 
-- URL: http://localhost:9292
-- Username: `pact`
-- Password: `pact`
-
-### 3. Consumer Tests ausführen (generiert Pact)
+### 2. Kompletten Workflow ausführen
 
 ```bash
-# Consumer Tests lokal ausführen
-docker compose run --rm consumer
-
-# Oder im Container:
-docker compose run --rm consumer pytest tests/ -v
+make test
 ```
 
-### 4. Pact zum Broker publishen
+Das führt aus:
+1. `make consumer-test` → Consumer Tests, generiert Pact JSON
+2. `make publish` → Pact zum Broker publishen
+3. `make provider-verify` → Provider gegen Pact verifizieren
+
+### 3. Ergebnis im Broker anschauen
+
+Öffne http://localhost:9292 - dort siehst du:
+- Den Contract zwischen Consumer und Provider
+- Verification Status (✅ oder ❌)
+- Versionshistorie
+
+## Alle Make-Befehle
 
 ```bash
-# Pact file zum Broker publishen
-docker compose run --rm consumer pact-broker publish ./pacts \
-  --broker-base-url=http://pact-broker:9292 \
-  --broker-username=pact \
-  --broker-password=pact \
-  --consumer-app-version=1.0.0
-```
+make help              # Alle Befehle anzeigen
 
-### 5. Provider verifizieren
+# Infrastruktur
+make up                # Broker + Provider starten
+make down              # Alles stoppen
+make clean             # Stoppen + Volumes löschen
+make status            # Health-Check aller Services
 
-```bash
-# Provider Verification ausführen
-docker compose run --rm provider pytest tests/ -v
+# Contract Testing
+make consumer-test     # Consumer Tests → generiert Pact
+make publish           # Pact zum Broker publishen
+make provider-verify   # Provider gegen Pact verifizieren
+make test              # Kompletter Workflow
+
+# Entwicklung
+make shell-consumer    # Shell im Consumer Container
+make shell-provider    # Shell im Provider Container
+make logs              # Logs anzeigen
 ```
 
 ## Projektstruktur
 
 ```
 contract-testing/
-├── docker-compose.yml      # Container-Orchestrierung
-├── pacts/                  # Generierte Pact-Dateien
-├── consumer/
-│   ├── Dockerfile
-│   ├── pyproject.toml
+├── consumer/                      # Der der die API AUFRUFT
 │   ├── src/
-│   │   └── client.py       # API Client Implementation
+│   │   └── client.py              # HTTP Client (httpx)
+│   ├── tests/
+│   │   └── test_consumer_contract.py  # Contract Tests
+│   └── scripts/
+│       └── publish_pact.py        # Publish-Script
+│
+├── provider/                      # Der der die API ANBIETET
+│   ├── src/
+│   │   └── main.py                # FastAPI App
 │   └── tests/
-│       └── test_consumer_contract.py  # Contract Tests
-└── provider/
-    ├── Dockerfile
-    ├── pyproject.toml
-    ├── src/
-    │   └── main.py         # FastAPI App + Provider States
-    └── tests/
-        └── test_provider_verification.py
+│       └── test_provider_verification.py  # Verification + State Handlers
+│
+├── pacts/                         # Generierte Contracts (JSON)
+├── docker-compose.yml
+└── Makefile
 ```
 
-## Workflow erklärt
+## Wie funktioniert es?
 
-### Consumer-Driven Contract Testing
-
-1. **Consumer definiert Erwartungen**
-   - Consumer schreibt Tests die beschreiben, was er von der API braucht
-   - Tests laufen gegen einen Mock Server
-   - Pact generiert eine JSON-Datei (den "Contract")
-
-2. **Contract wird geteilt**
-   - Contract wird zum Pact Broker gepublisht
-   - Broker verwaltet alle Contracts und Versionen
-
-3. **Provider verifiziert**
-   - Provider lädt Contracts vom Broker
-   - Pact spielt die Interaktionen gegen die echte API
-   - Provider muss alle Erwartungen erfüllen
-
-### Provider States
-
-Provider States (`given(...)`) erlauben es, den Provider in einen bestimmten Zustand zu versetzen:
+### Consumer Test (test_consumer_contract.py)
 
 ```python
-pact.given("a user with ID 1 exists")  # State
+from pact import Pact, match
+
+pact = Pact("UserConsumer", "UserProvider")
+
+# Definiere was du erwartest
+(
+    pact
     .upon_receiving("a request for user 1")
+    .given("a user with ID 1 exists")      # State für Provider
     .with_request("GET", "/users/1")
-    ...
+    .will_respond_with(200)
+    .with_body({
+        "id": match.int(1),                # Typ muss int sein
+        "name": match.str("Alice"),        # Typ muss string sein
+    })
+)
+
+# Test läuft gegen Mock Server
+with pact.serve() as mock_server:
+    client = UserApiClient(mock_server.url)
+    user = client.get_user(1)
+    assert user.name == "Alice"
+
+# Am Ende: pact.write_file() → erzeugt JSON
 ```
 
-Der Provider hat einen Endpoint `/_pact/provider-states` der diese States handhabt.
+### Provider Verification (test_provider_verification.py)
 
-## Lokale Entwicklung
+```python
+from pact import Verifier
 
-### Consumer Tests lokal (ohne Docker)
+verifier = Verifier("UserProvider")
+    .add_transport(url="http://localhost:8080")
+    .broker_source(broker_url)
+    .state_handler({
+        "a user with ID 1 exists": setup_user,  # State Handler
+    })
+
+verifier.verify()  # Spielt alle Interactions gegen echte API
+```
+
+### State Handler
+
+States bereiten die Datenbank vor:
+
+```python
+def setup_user(action, parameters):
+    if action == "setup":
+        # Daten anlegen
+        USERS_DB[1] = {"id": 1, "name": "Alice", ...}
+    elif action == "teardown":
+        # Aufräumen
+        del USERS_DB[1]
+```
+
+## Pact Matchers (v3)
+
+| Matcher | Beschreibung | Beispiel |
+|---------|--------------|----------|
+| `match.int(1)` | Typ muss Integer sein | `"id": match.int(1)` |
+| `match.str("x")` | Typ muss String sein | `"name": match.str("Alice")` |
+| `match.each_like({})` | Array mit mind. 1 Element | `"users": match.each_like({"id": 1})` |
+| `match.regex(r'\d+', "123")` | Regex Pattern | `"code": match.regex(r'\d{3}', "200")` |
+
+## Lokale Entwicklung (ohne Docker)
+
+### Consumer Tests
 
 ```bash
 cd consumer
@@ -128,51 +190,58 @@ pip install -e ".[test]"
 uvicorn src.main:app --reload
 ```
 
-## Pact Matchers
-
-Der Consumer Test verwendet flexible Matcher:
-
-| Matcher | Beschreibung | Beispiel |
-|---------|--------------|----------|
-| `Like(value)` | Typ muss matchen, Wert kann anders sein | `Like(1)` matcht jede Zahl |
-| `EachLike(value)` | Array mit mindestens einem Element | `EachLike({"id": 1})` |
-| `Term(regex, sample)` | Regex Pattern | `Term(r'\d+', '123')` |
-
-## Nützliche Befehle
+### Provider Verification lokal
 
 ```bash
-# Alle Container stoppen
-docker compose down
-
-# Logs anzeigen
-docker compose logs -f provider
-
-# In Container einloggen
-docker compose exec provider bash
-
-# Alles neu bauen
-docker compose build --no-cache
-
-# Nur Broker + DB starten
-docker compose up -d postgres pact-broker
+cd provider
+pytest tests/ -v
 ```
+
+## Workflow für Teams
+
+### Als Consumer (API-Nutzer)
+
+1. Schreibe Contract Tests für die Endpoints die du brauchst
+2. Führe `make consumer-test` aus → generiert Pact JSON
+3. Führe `make publish` aus → pushed zum Broker
+4. Teile dem Provider-Team die State-Namen mit
+
+### Als Provider (API-Anbieter)
+
+1. Hole dir Zugang zum Pact Broker
+2. Schreibe State Handlers für alle States im Pact
+3. Baue Verification in deine CI/CD ein
+4. `make provider-verify` published Ergebnis zum Broker
 
 ## Troubleshooting
 
-### Pact Broker nicht erreichbar
+### Broker nicht erreichbar
+
 ```bash
-# Prüfen ob Postgres healthy ist
-docker compose ps
-docker compose logs postgres
+make status
+docker compose logs pact-broker
 ```
 
-### Consumer Tests schlagen fehl
-```bash
-# Detaillierte Ausgabe
-docker compose run --rm consumer pytest tests/ -v --tb=long
+### State Handler fehlt
+
+```
+❌ No state handler found for: "user is admin"
+```
+→ State Handler im Provider hinzufügen
+
+### Consumer und Provider State matchen nicht
+
+Der State-String muss **exakt** übereinstimmen:
+```python
+# Consumer
+.given("users exist in the system")
+
+# Provider - muss identisch sein!
+"users exist in the system": handler_function
 ```
 
-### Provider Verification schlägt fehl
-- Prüfen ob Provider läuft: http://localhost:8000/health
-- Provider States korrekt implementiert?
-- Pact File vorhanden in `./pacts/`?
+## Links
+
+- [Pact Documentation](https://docs.pact.io)
+- [pact-python GitHub](https://github.com/pact-foundation/pact-python)
+- [Pact Broker](https://docs.pact.io/pact_broker)
