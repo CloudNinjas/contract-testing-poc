@@ -18,7 +18,7 @@ import pytest
 import uvicorn
 
 from pact import Verifier
-from src.main import USERS_DB, app
+from src.main import ORDERS_DB, USERS_DB, app
 
 if TYPE_CHECKING:
     from typing import TypeAlias
@@ -76,10 +76,15 @@ def test_provider_against_pact(provider_url: str) -> None:
 
     verifier = verifier.state_handler(
         {
+            # Shared states (used by UserConsumer and OrderConsumer)
             "a user with ID 1 exists": state_user_exists,
+            # UserConsumer only
             "no user with ID 999 exists": state_user_not_exists,
             "users exist in the system": state_users_exist,
             "the system is ready to create users": state_ready_to_create,
+            # OrderConsumer only
+            "user 1 has orders": state_user_has_orders,
+            "user 1 has no orders": state_user_has_no_orders,
         },
         teardown=True,
     )
@@ -127,3 +132,26 @@ def state_ready_to_create(
     parameters: dict[str, Any],
 ) -> None:
     """No special setup needed - system is ready for user creation."""
+
+
+def state_user_has_orders(
+    action: Literal["setup", "teardown"],
+    parameters: dict[str, Any],
+) -> None:
+    """Ensure user 1 has orders in the database."""
+    if action == "setup":
+        ORDERS_DB[1] = [
+            {"id": 1, "user_id": 1, "product": "Widget", "quantity": 2},
+            {"id": 2, "user_id": 1, "product": "Gadget", "quantity": 1},
+        ]
+    elif action == "teardown":
+        ORDERS_DB.pop(1, None)
+
+
+def state_user_has_no_orders(
+    action: Literal["setup", "teardown"],
+    parameters: dict[str, Any],
+) -> None:
+    """Ensure user 1 has NO orders in the database."""
+    if action == "setup":
+        ORDERS_DB.pop(1, None)

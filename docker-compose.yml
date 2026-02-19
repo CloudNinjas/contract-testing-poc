@@ -43,7 +43,7 @@ services:
       - ./pacts:/app/pacts
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Consumer - runs contract tests
+  # Consumer 1 (UserConsumer) - runs contract tests
   consumer:
     build:
       context: ./consumer
@@ -58,6 +58,28 @@ services:
       - ./consumer/src:/app/src
       - ./consumer/tests:/app/tests
       - ./consumer/scripts:/app/scripts
+      - ./pacts:/app/pacts
+    depends_on:
+      - pact-broker
+      - provider
+    profiles:
+      - test
+
+  # Consumer 2 (OrderConsumer) - runs contract tests
+  consumer2:
+    build:
+      context: ./consumer2
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PACT_BROKER_BASE_URL=http://pact-broker:9292
+      - PACT_BROKER_USERNAME=pact
+      - PACT_BROKER_PASSWORD=pact
+      - PROVIDER_URL=http://provider:8000
+    volumes:
+      - ./consumer2/src:/app/src
+      - ./consumer2/tests:/app/tests
+      - ./consumer2/scripts:/app/scripts
       - ./pacts:/app/pacts
     depends_on:
       - pact-broker
