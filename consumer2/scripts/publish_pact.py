@@ -9,6 +9,7 @@ import httpx
 PACTS_DIR = Path(__file__).parent.parent / "pacts"
 BROKER_URL = os.getenv("PACT_BROKER_BASE_URL", "http://localhost:9292")
 CONSUMER_VERSION = os.getenv("CONSUMER_VERSION", "1.0.0")
+BROKER_TOKEN = os.getenv("PACT_BROKER_TOKEN")
 BROKER_USERNAME = os.getenv("PACT_BROKER_USERNAME", "pact")
 BROKER_PASSWORD = os.getenv("PACT_BROKER_PASSWORD", "pact")
 
@@ -35,12 +36,20 @@ def publish_pact(pact_file: Path) -> bool:
 
     url = f"{BROKER_URL}/pacts/provider/{provider}/consumer/{consumer}/version/{CONSUMER_VERSION}"
 
+    # Build auth headers
+    headers = {"Content-Type": "application/json"}
+    auth = None
+    if BROKER_TOKEN:
+        headers["Authorization"] = f"Bearer {BROKER_TOKEN}"
+    else:
+        auth = (BROKER_USERNAME, BROKER_PASSWORD)
+
     try:
         response = httpx.put(
             url,
             content=content,
-            headers={"Content-Type": "application/json"},
-            auth=(BROKER_USERNAME, BROKER_PASSWORD),
+            headers=headers,
+            auth=auth,
             timeout=30,
         )
         response.raise_for_status()

@@ -12,6 +12,7 @@ def publish_pact(
     pact_dir: Path,
     broker_url: str,
     consumer_version: str,
+    token: str | None = None,
     username: str = "pact",
     password: str = "pact",
 ) -> None:
@@ -21,6 +22,14 @@ def publish_pact(
     if not pact_files:
         print(f"No pact files found in {pact_dir}")
         sys.exit(1)
+
+    # Build auth headers
+    headers = {"Content-Type": "application/json"}
+    auth = None
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    else:
+        auth = (username, password)
 
     for pact_file in pact_files:
         print(f"Publishing {pact_file.name}...")
@@ -39,8 +48,8 @@ def publish_pact(
         response = httpx.put(
             url,
             content=content,
-            headers={"Content-Type": "application/json"},
-            auth=(username, password),
+            headers=headers,
+            auth=auth,
         )
 
         if response.status_code in (200, 201):
@@ -55,9 +64,10 @@ def publish_pact(
 if __name__ == "__main__":
     broker_url = os.getenv("PACT_BROKER_BASE_URL", "http://pact-broker:9292")
     version = os.getenv("CONSUMER_VERSION", "1.0.0")
+    token = os.getenv("PACT_BROKER_TOKEN")
     username = os.getenv("PACT_BROKER_USERNAME", "pact")
     password = os.getenv("PACT_BROKER_PASSWORD", "pact")
 
     pacts_dir = Path(__file__).parent.parent / "pacts"
 
-    publish_pact(pacts_dir, broker_url, version, username, password)
+    publish_pact(pacts_dir, broker_url, version, token, username, password)

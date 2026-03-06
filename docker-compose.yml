@@ -35,6 +35,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
@@ -48,11 +50,10 @@ services:
     build:
       context: ./consumer
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - PACT_BROKER_BASE_URL=http://pact-broker:9292
-      - PACT_BROKER_USERNAME=pact
-      - PACT_BROKER_PASSWORD=pact
       - PROVIDER_URL=http://provider:8000
     volumes:
       - ./consumer/src:/app/src
@@ -70,11 +71,10 @@ services:
     build:
       context: ./consumer2
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - PACT_BROKER_BASE_URL=http://pact-broker:9292
-      - PACT_BROKER_USERNAME=pact
-      - PACT_BROKER_PASSWORD=pact
       - PROVIDER_URL=http://provider:8000
     volumes:
       - ./consumer2/src:/app/src

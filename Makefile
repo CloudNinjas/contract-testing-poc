@@ -80,7 +80,6 @@ CONSUMER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.
 publish:
 	@echo "Publishing Pact (Version: $(CONSUMER_VERSION))..."
 	docker compose run --rm \
-		-e PACT_BROKER_BASE_URL=http://pact-broker:9292 \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		consumer python scripts/publish_pact.py
 	@echo ""
@@ -91,7 +90,6 @@ PROVIDER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.
 provider-verify:
 	@echo "Verifying Provider against Pact..."
 	docker compose run --rm \
-		-e PACT_BROKER_BASE_URL=http://pact-broker:9292 \
 		-e PROVIDER_VERSION=$(PROVIDER_VERSION) \
 		provider pytest tests/ -v -s
 
@@ -115,7 +113,6 @@ consumer2-test:
 publish2:
 	@echo "Publishing Consumer 2 Pact (Version: $(CONSUMER_VERSION))..."
 	docker compose run --rm \
-		-e PACT_BROKER_BASE_URL=http://pact-broker:9292 \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		consumer2 python scripts/publish_pact.py
 	@echo ""

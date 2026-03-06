@@ -59,11 +59,18 @@ def test_provider_against_pact(provider_url: str) -> None:
 
     if broker_url:
         # Verify against Pact Broker
-        verifier = verifier.broker_source(
-            broker_url,
-            username=os.getenv("PACT_BROKER_USERNAME", "pact"),
-            password=os.getenv("PACT_BROKER_PASSWORD", "pact"),
-        )
+        broker_token = os.getenv("PACT_BROKER_TOKEN")
+        if broker_token:
+            verifier = verifier.broker_source(
+                broker_url,
+                token=broker_token,
+            )
+        else:
+            verifier = verifier.broker_source(
+                broker_url,
+                username=os.getenv("PACT_BROKER_USERNAME", "pact"),
+                password=os.getenv("PACT_BROKER_PASSWORD", "pact"),
+            )
         # Publish verification results back to broker
         provider_version = os.getenv("PROVIDER_VERSION", "0.1.0")
         verifier = verifier.set_publish_options(
