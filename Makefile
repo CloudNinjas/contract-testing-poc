@@ -3,6 +3,12 @@
         broker provider shell-consumer shell-consumer2 shell-provider \
         test test2 test-all
 
+# Load .env file if it exists
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 # Default target
 help:
 	@echo "Pact Contract Testing POC"
@@ -83,7 +89,7 @@ publish:
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		consumer python scripts/publish_pact.py
 	@echo ""
-	@echo "Pact published! Check: http://localhost:9292"
+	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"
 
 # Provider Verification
 PROVIDER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.0")
@@ -116,7 +122,7 @@ publish2:
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		consumer2 python scripts/publish_pact.py
 	@echo ""
-	@echo "Pact published! Check: http://localhost:9292"
+	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"
 
 # Kompletter Workflow Consumer 2
 test2: consumer2-test publish2 provider-verify
