@@ -57,25 +57,90 @@ Das führt aus:
 - Verification Status (✅ oder ❌)
 - Versionshistorie
 
+## Konfiguration
+
+Die Konfiguration erfolgt über die `.env` Datei. Kopiere `.env.example` als Vorlage:
+
+```bash
+cp .env.example .env
+```
+
+### Lokaler Broker vs. PactFlow SaaS
+
+Mit dem `LOCAL` Flag wählst du zwischen lokalem Broker und PactFlow SaaS:
+
+```bash
+# .env
+
+# LOCAL=true  → Lokaler Pact Broker (Docker)
+# LOCAL=false → PactFlow SaaS
+
+LOCAL=true
+```
+
+| Einstellung | `LOCAL=true` | `LOCAL=false` |
+|-------------|--------------|---------------|
+| Broker | Lokaler Docker Container | PactFlow SaaS |
+| `make up` | Startet Postgres + Broker + Provider | Startet nur Provider |
+| Auth | Username/Password | Bearer Token |
+| URL | `http://localhost:9292` | `https://your-org.pactflow.io` |
+
+### Lokaler Broker (LOCAL=true)
+
+```bash
+# .env
+LOCAL=true
+LOCAL_BROKER_URL=http://pact-broker:9292
+LOCAL_BROKER_USERNAME=pact
+LOCAL_BROKER_PASSWORD=pact
+```
+
+### PactFlow SaaS (LOCAL=false)
+
+```bash
+# .env
+LOCAL=false
+PACTFLOW_BROKER_URL=https://your-org.pactflow.io
+PACTFLOW_BROKER_TOKEN=your-api-token-here
+```
+
+Den API Token findest du in PactFlow unter: **Settings → API Tokens**
+
+### Aktuellen Modus prüfen
+
+```bash
+make help    # Zeigt aktuellen Modus an
+make status  # Zeigt Modus + Health-Checks
+```
+
 ## Alle Make-Befehle
 
 ```bash
-make help              # Alle Befehle anzeigen
+make help              # Alle Befehle anzeigen (zeigt auch aktuellen Modus)
 
 # Infrastruktur
-make up                # Broker + Provider starten
+make up                # Broker + Provider starten (je nach LOCAL Flag)
 make down              # Alles stoppen
 make clean             # Stoppen + Volumes löschen
 make status            # Health-Check aller Services
 
-# Contract Testing
-make consumer-test     # Consumer Tests → generiert Pact
-make publish           # Pact zum Broker publishen
-make provider-verify   # Provider gegen Pact verifizieren
-make test              # Kompletter Workflow
+# Contract Testing - Consumer 1 (UserConsumer)
+make consumer-test     # Consumer 1 Tests → generiert Pact
+make publish           # Consumer 1 Pact zum Broker publishen
+make test              # Consumer 1 Workflow (test + publish + verify)
+
+# Contract Testing - Consumer 2 (OrderConsumer)
+make consumer2-test    # Consumer 2 Tests → generiert Pact
+make publish2          # Consumer 2 Pact zum Broker publishen
+make test2             # Consumer 2 Workflow (test + publish + verify)
+
+# Contract Testing - Alle
+make test-all          # Beide Consumer + Provider Verify
+make provider-verify   # Provider gegen alle Pacts verifizieren
 
 # Entwicklung
-make shell-consumer    # Shell im Consumer Container
+make shell-consumer    # Shell im Consumer 1 Container
+make shell-consumer2   # Shell im Consumer 2 Container
 make shell-provider    # Shell im Provider Container
 make logs              # Logs anzeigen
 ```
@@ -84,9 +149,17 @@ make logs              # Logs anzeigen
 
 ```
 contract-testing/
-├── consumer/                      # Der der die API AUFRUFT
+├── consumer/                      # Consumer 1: UserConsumer
 │   ├── src/
 │   │   └── client.py              # HTTP Client (httpx)
+│   ├── tests/
+│   │   └── test_consumer_contract.py  # Contract Tests
+│   └── scripts/
+│       └── publish_pact.py        # Publish-Script
+│
+├── consumer2/                     # Consumer 2: OrderConsumer
+│   ├── src/
+│   │   └── client.py              # Order API Client
 │   ├── tests/
 │   │   └── test_consumer_contract.py  # Contract Tests
 │   └── scripts/
@@ -99,6 +172,8 @@ contract-testing/
 │       └── test_provider_verification.py  # Verification + State Handlers
 │
 ├── pacts/                         # Generierte Contracts (JSON)
+├── .env                           # Konfiguration (nicht im Repo)
+├── .env.example                   # Vorlage für .env
 ├── docker-compose.yml
 └── Makefile
 ```
