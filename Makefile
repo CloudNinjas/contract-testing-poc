@@ -9,12 +9,36 @@ ifneq (,$(wildcard .env))
     export
 endif
 
+# Set broker URL based on LOCAL flag
+ifeq ($(LOCAL),true)
+    PACT_BROKER_BASE_URL := $(LOCAL_BROKER_URL)
+    PACT_BROKER_USERNAME := $(LOCAL_BROKER_USERNAME)
+    PACT_BROKER_PASSWORD := $(LOCAL_BROKER_PASSWORD)
+    PACT_BROKER_TOKEN :=
+    MODE_INFO := LOCAL (http://localhost:9292)
+else
+    PACT_BROKER_BASE_URL := $(PACTFLOW_BROKER_URL)
+    PACT_BROKER_TOKEN := $(PACTFLOW_BROKER_TOKEN)
+    PACT_BROKER_USERNAME :=
+    PACT_BROKER_PASSWORD :=
+    MODE_INFO := PACTFLOW ($(PACTFLOW_BROKER_URL))
+endif
+
+export PACT_BROKER_BASE_URL PACT_BROKER_TOKEN PACT_BROKER_USERNAME PACT_BROKER_PASSWORD
+
 # Default target
 help:
 	@echo "Pact Contract Testing POC"
 	@echo ""
+	@echo "Modus: $(MODE_INFO)"
+	@echo "  (ändern in .env: LOCAL=true oder LOCAL=false)"
+	@echo ""
 	@echo "Infrastruktur:"
-	@echo "  make up              - Broker + Provider starten"
+ifeq ($(LOCAL),true)
+	@echo "  make up              - Lokalen Broker + Provider starten"
+else
+	@echo "  make up              - Nur Provider starten (Broker ist PactFlow)"
+endif
 	@echo "  make down            - Alles stoppen"
 	@echo "  make build           - Images neu bauen"
 	@echo "  make logs            - Logs anzeigen"
@@ -35,20 +59,21 @@ help:
 	@echo "  make provider-verify - Provider gegen alle Pacts verifizieren"
 	@echo ""
 	@echo "Entwicklung:"
-	@echo "  make broker          - Nur Broker starten"
+	@echo "  make broker          - Nur lokalen Broker starten"
 	@echo "  make provider        - Nur Provider starten"
 	@echo "  make shell-consumer  - Shell im Consumer 1 Container"
 	@echo "  make shell-consumer2 - Shell im Consumer 2 Container"
 	@echo "  make shell-provider  - Shell im Provider Container"
 	@echo ""
 	@echo "URLs:"
-	@echo "  Pact Broker: http://localhost:9292 (pact/pact)"
+	@echo "  Pact Broker: $(PACT_BROKER_BASE_URL)"
 	@echo "  Provider:    http://localhost:8000"
 
 # =============================================================================
 # Infrastruktur
 # =============================================================================
 
+ifeq ($(LOCAL),true)
 up:
 	docker compose up -d postgres pact-broker provider
 	@echo ""
@@ -56,6 +81,13 @@ up:
 	@sleep 3
 	@echo "Broker: http://localhost:9292 (pact/pact)"
 	@echo "Provider: http://localhost:8000"
+else
+up:
+	docker compose up -d provider
+	@echo ""
+	@echo "Provider: http://localhost:8000"
+	@echo "Broker: $(PACTFLOW_BROKER_URL) (PactFlow SaaS)"
+endif
 
 down:
 	docker compose down
@@ -86,20 +118,30 @@ CONSUMER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 publish:
 	@echo "Publishing Pact (Version: $(CONSUMER_VERSION), Branch: $(GIT_BRANCH))..."
+	@echo "Broker: $(PACT_BROKER_BASE_URL)"
 	docker compose run --rm \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		-e GIT_BRANCH=$(GIT_BRANCH) \
+		-e PACT_BROKER_BASE_URL=$(PACT_BROKER_BASE_URL) \
+		-e PACT_BROKER_TOKEN=$(PACT_BROKER_TOKEN) \
+		-e PACT_BROKER_USERNAME=$(PACT_BROKER_USERNAME) \
+		-e PACT_BROKER_PASSWORD=$(PACT_BROKER_PASSWORD) \
 		consumer python scripts/publish_pact.py
 	@echo ""
-	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"
+	@echo "Pact published! Check: $(PACT_BROKER_BASE_URL)"
 
 # Provider Verification
 PROVIDER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.0")
 provider-verify:
 	@echo "Verifying Provider against Pact (Version: $(PROVIDER_VERSION), Branch: $(GIT_BRANCH))..."
+	@echo "Broker: $(PACT_BROKER_BASE_URL)"
 	docker compose run --rm \
 		-e PROVIDER_VERSION=$(PROVIDER_VERSION) \
 		-e PROVIDER_BRANCH=$(GIT_BRANCH) \
+		-e PACT_BROKER_BASE_URL=$(PACT_BROKER_BASE_URL) \
+		-e PACT_BROKER_TOKEN=$(PACT_BROKER_TOKEN) \
+		-e PACT_BROKER_USERNAME=$(PACT_BROKER_USERNAME) \
+		-e PACT_BROKER_PASSWORD=$(PACT_BROKER_PASSWORD) \
 		provider pytest tests/ -v -s
 
 # Kompletter Workflow Consumer 1
@@ -121,12 +163,17 @@ consumer2-test:
 # Consumer 2 Pact zum Broker publishen
 publish2:
 	@echo "Publishing Consumer 2 Pact (Version: $(CONSUMER_VERSION), Branch: $(GIT_BRANCH))..."
+	@echo "Broker: $(PACT_BROKER_BASE_URL)"
 	docker compose run --rm \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
 		-e GIT_BRANCH=$(GIT_BRANCH) \
+		-e PACT_BROKER_BASE_URL=$(PACT_BROKER_BASE_URL) \
+		-e PACT_BROKER_TOKEN=$(PACT_BROKER_TOKEN) \
+		-e PACT_BROKER_USERNAME=$(PACT_BROKER_USERNAME) \
+		-e PACT_BROKER_PASSWORD=$(PACT_BROKER_PASSWORD) \
 		consumer2 python scripts/publish_pact.py
 	@echo ""
-	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"
+	@echo "Pact published! Check: $(PACT_BROKER_BASE_URL)"
 
 # Kompletter Workflow Consumer 2
 test2: consumer2-test publish2 provider-verify
@@ -164,8 +211,12 @@ status:
 	@echo "Container Status:"
 	@docker compose ps
 	@echo ""
+	@echo "Modus: $(MODE_INFO)"
+	@echo ""
 	@echo "Provider Health:"
 	@curl -s http://localhost:8000/health 2>/dev/null || echo "Provider nicht erreichbar"
+ifeq ($(LOCAL),true)
 	@echo ""
 	@echo "Broker Health:"
 	@curl -s -u pact:pact http://localhost:9292/diagnostic/status/heartbeat 2>/dev/null || echo "Broker nicht erreichbar"
+endif
