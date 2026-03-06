@@ -12,6 +12,7 @@ def publish_pact(
     pact_dir: Path,
     broker_url: str,
     consumer_version: str,
+    branch: str = "main",
     token: str | None = None,
     username: str = "pact",
     password: str = "pact",
@@ -30,6 +31,8 @@ def publish_pact(
         headers["Authorization"] = f"Bearer {token}"
     else:
         auth = (username, password)
+
+    consumers_published: set[str] = set()
 
     for pact_file in pact_files:
         print(f"Publishing {pact_file.name}...")
@@ -54,9 +57,19 @@ def publish_pact(
 
         if response.status_code in (200, 201):
             print(f"  Published successfully: {consumer} -> {provider}")
+            consumers_published.add(consumer)
         else:
             print(f"  Failed: {response.status_code} - {response.text}")
             sys.exit(1)
+
+    # Tag each consumer version with the branch
+    for consumer in consumers_published:
+        tag_url = f"{broker_url}/pacticipants/{consumer}/versions/{consumer_version}/tags/{branch}"
+        tag_response = httpx.put(tag_url, headers=headers, auth=auth)
+        if tag_response.status_code in (200, 201):
+            print(f"  Tagged {consumer} version {consumer_version} with branch '{branch}'")
+        else:
+            print(f"  Warning: Could not tag with branch: {tag_response.status_code}")
 
     print(f"\nAll pacts published! View at: {broker_url}")
 
@@ -64,10 +77,11 @@ def publish_pact(
 if __name__ == "__main__":
     broker_url = os.getenv("PACT_BROKER_BASE_URL", "http://pact-broker:9292")
     version = os.getenv("CONSUMER_VERSION", "1.0.0")
+    branch = os.getenv("GIT_BRANCH", "main")
     token = os.getenv("PACT_BROKER_TOKEN")
     username = os.getenv("PACT_BROKER_USERNAME", "pact")
     password = os.getenv("PACT_BROKER_PASSWORD", "pact")
 
     pacts_dir = Path(__file__).parent.parent / "pacts"
 
-    publish_pact(pacts_dir, broker_url, version, token, username, password)
+    publish_pact(pacts_dir, broker_url, version, branch, token, username, password)

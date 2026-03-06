@@ -83,10 +83,12 @@ consumer-test:
 
 # Pact zum Broker publishen
 CONSUMER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.0")
+GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 publish:
-	@echo "Publishing Pact (Version: $(CONSUMER_VERSION))..."
+	@echo "Publishing Pact (Version: $(CONSUMER_VERSION), Branch: $(GIT_BRANCH))..."
 	docker compose run --rm \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
+		-e GIT_BRANCH=$(GIT_BRANCH) \
 		consumer python scripts/publish_pact.py
 	@echo ""
 	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"
@@ -94,9 +96,10 @@ publish:
 # Provider Verification
 PROVIDER_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "1.0.0")
 provider-verify:
-	@echo "Verifying Provider against Pact..."
+	@echo "Verifying Provider against Pact (Version: $(PROVIDER_VERSION), Branch: $(GIT_BRANCH))..."
 	docker compose run --rm \
 		-e PROVIDER_VERSION=$(PROVIDER_VERSION) \
+		-e PROVIDER_BRANCH=$(GIT_BRANCH) \
 		provider pytest tests/ -v -s
 
 # Kompletter Workflow Consumer 1
@@ -117,9 +120,10 @@ consumer2-test:
 
 # Consumer 2 Pact zum Broker publishen
 publish2:
-	@echo "Publishing Consumer 2 Pact (Version: $(CONSUMER_VERSION))..."
+	@echo "Publishing Consumer 2 Pact (Version: $(CONSUMER_VERSION), Branch: $(GIT_BRANCH))..."
 	docker compose run --rm \
 		-e CONSUMER_VERSION=$(CONSUMER_VERSION) \
+		-e GIT_BRANCH=$(GIT_BRANCH) \
 		consumer2 python scripts/publish_pact.py
 	@echo ""
 	@echo "Pact published! Check: $${PACT_BROKER_BASE_URL:-http://localhost:9292}"

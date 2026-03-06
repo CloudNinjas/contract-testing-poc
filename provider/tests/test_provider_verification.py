@@ -73,9 +73,11 @@ def test_provider_against_pact(provider_url: str) -> None:
             )
         # Publish verification results back to broker
         provider_version = os.getenv("PROVIDER_VERSION", "0.1.0")
+        provider_branch = os.getenv("PROVIDER_BRANCH", "main")
         verifier = verifier.set_publish_options(
             version=provider_version,
             url=broker_url,
+            branch=provider_branch,
         )
     else:
         # Verify against local pact files
